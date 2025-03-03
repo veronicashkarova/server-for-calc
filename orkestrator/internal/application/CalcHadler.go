@@ -4,35 +4,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/veronicashkarova/server-for-calc/pkg/calc"
-	"github.com/veronicashkarova/server-for-calc/pkg/orkestrator"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+
+	"github.com/veronicashkarova/server-for-calc/pkg/calc"
+	"github.com/veronicashkarova/server-for-calc/pkg/contract"
+	"github.com/veronicashkarova/server-for-calc/pkg/orkestrator"
 )
-
-func CalcHandler(w http.ResponseWriter, r *http.Request) {
-	request := new(Request)
-	defer r.Body.Close()
-	err := json.NewDecoder(r.Body).Decode(&request)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	result, err := calc.Calc(request.Expression)
-	if err != nil {
-		switch {
-		case errors.Is(err, calc.ErrInvalidExpression):
-			http.Error(w, err.Error(), http.StatusBadRequest)
-		case errors.Is(err, calc.ErrEmptyExpression):
-			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
-		}
-	} else {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "result: %f", result)
-	}
-}
 
 func NewExpressionHandler(w http.ResponseWriter, r *http.Request) {
 	request := new(Request)
@@ -43,7 +23,7 @@ func NewExpressionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := orkestrator.AddExpression(request.Expression)
+	result, id, err := orkestrator.AddExpression(request.Expression)
 	if err != nil {
 		switch {
 		case errors.Is(err, calc.ErrInvalidExpression):
@@ -52,8 +32,22 @@ func NewExpressionHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
 		}
 	} else {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusCreated)
 		fmt.Fprint(w, result)
+
+		go func() {
+			result, err := calc.Calc(request.Expression, id, contract.TaskChannel)
+			value, exist := contract.ExpressionMap[id]
+			if exist {
+				if err != nil {
+					value.Data.Status = err.Error()
+				} else {
+					value.Data.Status = contract.Done
+					value.Data.Result = strconv.FormatFloat(result, 'f', 3, 64)
+				}
+				contract.ExpressionMap[id] = value
+			}
+		}()
 	}
 }
 
@@ -86,7 +80,6 @@ func IdHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func TaskHandler(w http.ResponseWriter, r *http.Request) {
-
 	if r.Body == http.NoBody {
 		result, err := orkestrator.GetTask()
 		if err != nil {
@@ -103,7 +96,11 @@ func TaskHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		orkestrator.SendResult(taskRequest.ID, taskRequest.Result)
+		var resultErr = orkestrator.SendResult(taskRequest.ID, taskRequest.Result)
+		if resultErr != nil {
+			http.Error(w, resultErr.Error(), http.StatusInternalServerError)
+		}
+		w.WriteHeader(http.StatusOK)
 	}
 }
 

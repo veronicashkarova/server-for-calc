@@ -1,26 +1,24 @@
 package calc
 
 import (
-	"errors"
+	"fmt"
 	"strconv"
+
+	"github.com/veronicashkarova/server-for-calc/pkg/contract"
 )
 
-// Стэк
 type stack struct {
 	stack []string
 }
 
-// Создаёт экземпляр стэка
 func newstack() stack {
 	return stack{stack: []string{}}
 }
 
-// Добавляет элемент в стак
 func (s *stack) push(val string) {
 	s.stack = append(s.stack, val)
 }
 
-// Просматривает последний элемент в стэке
 func (s *stack) getTop() string {
 	if len(s.stack) != 0 {
 		return s.stack[len(s.stack)-1]
@@ -29,7 +27,6 @@ func (s *stack) getTop() string {
 	}
 }
 
-// Вынимает последний элемент из стэка
 func (s *stack) pop() string {
 	if len(s.stack) != 0 {
 		r := s.stack[len(s.stack)-1]
@@ -40,16 +37,15 @@ func (s *stack) pop() string {
 	}
 }
 
-// Вычисляет выражение с помощью обратной польской записи
-func Calc(expression string) (float64, error) {
-	var bufnum string      // Буфер для числа
-	var rpnarr []string    // Выражение в виде ПН
-	rpnstack := newstack() // Стэк
+func Calc(expression string, id string, taskChan chan contract.TaskData) (float64, error) {
+	var bufnum string
+	var rpnarr []string
+	rpnstack := newstack()
 
 	for _, v := range expression {
-		if _, err := strconv.Atoi(string(v)); err == nil || string(v) == "." { // Если встречаем цифру (или плавающую точку)...
-			bufnum += string(v) // ...Добавляем число в буфер
-		} else if string(v) == ")" { // Если встречаем правую скобку...
+		if _, err := strconv.Atoi(string(v)); err == nil || string(v) == "." {
+			bufnum += string(v)
+		} else if string(v) == ")" {
 			if bufnum != "" {
 				rpnarr = append(rpnarr, bufnum)
 				bufnum = ""
@@ -57,12 +53,12 @@ func Calc(expression string) (float64, error) {
 
 			for rpnstack.getTop() != "(" {
 				if rpnstack.getTop() == "" {
-					return 0, errors.New("one of the brackets is missing a pair")
+					return 0, ErrMissingBracket
 				}
 				rpnarr = append(rpnarr, rpnstack.pop())
 			}
 			rpnstack.pop()
-		} else { // Если встречаем оператор...
+		} else {
 			flag := false
 			allops := [6]string{"/", "*", "-", "+", "(", ")"}
 			for _, op := range allops {
@@ -72,7 +68,7 @@ func Calc(expression string) (float64, error) {
 				}
 			}
 			if !flag {
-				return 0, errors.New("detected illigal symbols")
+				return 0, ErrIllegalSign
 			}
 
 			if bufnum != "" {
@@ -102,26 +98,31 @@ func Calc(expression string) (float64, error) {
 		if _, err := strconv.ParseFloat(v, 64); err == nil {
 			rpnstack.push(v)
 		} else {
+			fmt.Println("rpnstack.pop()")
 			rawo2 := rpnstack.pop()
 			rawo1 := rpnstack.pop()
 			if rawo1 == "" || rawo2 == "" {
-				return 0, errors.New("some error in expression structure")
+				return 0, ErrInvalidExpression
 			}
 			o2, _ := strconv.ParseFloat(rawo2, 64)
 			o1, _ := strconv.ParseFloat(rawo1, 64)
 			if v == "+" {
-				rpnstack.push(strconv.FormatFloat((o1 + o2), 'f', -1, 64))
+				rpnstack.push(strconv.FormatFloat(
+					WaitResult(id, o1, o2, v, contract.AppConfig.TIME_ADDITION_MS, taskChan), 'f', -1, 64))
 			} else if v == "-" {
-				rpnstack.push(strconv.FormatFloat((o1 - o2), 'f', -1, 64))
+				rpnstack.push(strconv.FormatFloat(
+					WaitResult(id, o1, o2, v, contract.AppConfig.TIME_SUBTRACTION_MS, taskChan), 'f', -1, 64))
 			} else if v == "*" {
-				rpnstack.push(strconv.FormatFloat((o1 * o2), 'f', -1, 64))
+				rpnstack.push(strconv.FormatFloat(
+					WaitResult(id, o1, o2, v, contract.AppConfig.TIME_MULTIPLICATIONS_MS, taskChan), 'f', -1, 64))
 			} else if v == "/" {
 				if o2 == 0 {
-					return 0, errors.New("division by zero is illigal")
+					return 0, ErrNullDivision
 				}
-				rpnstack.push(strconv.FormatFloat((o1 / o2), 'f', -1, 64))
+				rpnstack.push(strconv.FormatFloat(
+					WaitResult(id, o1, o2, v, contract.AppConfig.TIME_DIVISIONS_MS, taskChan), 'f', -1, 64))
 			} else if v == "(" {
-				return 0, errors.New("one of the brackets is missing a pair")
+				return 0, ErrMissingBracket
 			}
 		}
 	}
@@ -130,4 +131,20 @@ func Calc(expression string) (float64, error) {
 		return 0, err
 	}
 	return res, nil
+}
+
+func WaitResult(strId string, arg1 float64, arg2 float64, operation string, delay int, taskChan chan contract.TaskData) float64 {
+	fmt.Println("WaitResult", arg1, arg2, operation)
+	id, _ := strconv.Atoi(strId)
+	taskData := contract.TaskData{
+		ID:            id,
+		Arg1:          arg1,
+		Arg2:          arg2,
+		Operation:     operation,
+		OperationTime: delay,
+	}
+	taskChan <- taskData
+	result := <-contract.ExpressionMap[strId].ExpChan
+	fmt.Println("channel result - ", result)
+	return result
 }
