@@ -1,3 +1,3 @@
-module github.com/veronicashkarova/server-for-calc/agent
+module github.com/veronicashkarova/agent
 
 go 1.23.0
