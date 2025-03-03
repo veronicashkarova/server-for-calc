@@ -98,7 +98,6 @@ func Calc(expression string, id string, taskChan chan contract.TaskData) (float6
 		if _, err := strconv.ParseFloat(v, 64); err == nil {
 			rpnstack.push(v)
 		} else {
-			fmt.Println("rpnstack.pop()")
 			rawo2 := rpnstack.pop()
 			rawo1 := rpnstack.pop()
 			if rawo1 == "" || rawo2 == "" {

@@ -9,7 +9,6 @@ import (
 )
 
 var id = 0
-
 var expressions = contract.ExpressionsData{}
 
 func AddExpression(expression string) (string, string, error) {
@@ -91,7 +90,6 @@ func findExpressionForId(id string) (contract.ExpressionData, error) {
 func SendResult(id int, result float64) error {
 	_, exists := contract.ExpressionMap[fmt.Sprint(id)]
 	if exists {
-		fmt.Println("result - ", result)
 		task := contract.ExpressionMap[fmt.Sprint(id)].Data
 		if (task.Result != contract.Done) {
 			contract.ExpressionMap[fmt.Sprint(id)].ExpChan <- result
