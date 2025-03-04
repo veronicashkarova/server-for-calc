@@ -37,7 +37,6 @@ func RunAgent(power int, delay int) {
 	}
 
 	wg.Wait()
-
 }
 
 func startAgent(delay int) {

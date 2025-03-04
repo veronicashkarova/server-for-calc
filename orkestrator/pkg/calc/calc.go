@@ -3,7 +3,6 @@ package calc
 import (
 	"fmt"
 	"strconv"
-
 	"github.com/veronicashkarova/server-for-calc/pkg/contract"
 )
 
